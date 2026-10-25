@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Go/no-go: slice a 20 mm cube with flattened X2D 0.4 presets."""
+"""Go/no-go: slice a 20 mm cube with the flattened A1 0.4 presets."""
 
 from __future__ import annotations
 
@@ -13,22 +13,31 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from print3d.flatten import flatten_x2d  # noqa: E402
+from print3d.flatten import flatten_profiles  # noqa: E402
+from print3d.printer import load_printer  # noqa: E402
 from print3d.project import extract_plate_png, inspect_project  # noqa: E402
 from print3d.studio import SliceRequest, run_slice, slice_plan  # noqa: E402
 
 
 def studio_conf_mtime() -> float | None:
-    path = Path.home() / "Library/Application Support/BambuStudio/BambuStudio.conf"
-    return path.stat().st_mtime if path.is_file() else None
+    candidates = [
+        Path.home() / "Library/Application Support/BambuStudio/BambuStudio.conf",
+        Path.home() / "AppData/Roaming/BambuStudio/BambuStudio.conf",
+    ]
+    for path in candidates:
+        if path.is_file():
+            return path.stat().st_mtime
+    return None
 
 
 def main() -> int:
-    profiles = ROOT / "src" / "print3d" / "profiles" / "x2d-0.4"
+    printer = "a1"
+    profiles = ROOT / "src" / "print3d" / "profiles" / "a1-0.4"
     fixtures = ROOT / "tests" / "fixtures"
     scratch = ROOT / "scratch" / "spike"
     mesh = fixtures / "cube_20mm.stl"
-    flattened = flatten_x2d(output_dir=profiles)
+    target = load_printer(printer, profiles)
+    flattened = flatten_profiles(printer=printer, output_dir=profiles)
     print(json.dumps({"flatten": flattened["provenance"]}, indent=2))
 
     request = SliceRequest(
@@ -39,6 +48,7 @@ def main() -> int:
         filaments=tuple(Path(path) for path in flattened["filament_paths"]),
         datadir=scratch / "datadir",
         output_dir=scratch / "slice",
+        bed_type=target.bed_type,
     )
     plan = slice_plan(request)
     (scratch / "command.json").parent.mkdir(parents=True, exist_ok=True)

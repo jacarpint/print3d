@@ -8,6 +8,10 @@ from pathlib import Path
 
 PACKAGE = Path(__file__).resolve().parent
 JOBS_ENV = "PRINT3D_JOBS"
+PROFILES_ENV = "PRINT3D_PROFILES"
+PRINTER_ENV = "PRINT3D_PRINTER"
+DEFAULT_PRINTER = "a1"
+PRINTERS = ("a1", "x2d")
 NAME_RE = re.compile(r"[a-z0-9_-]{1,64}")
 
 
@@ -15,8 +19,25 @@ def repo_root() -> Path:
     return PACKAGE.parents[1]
 
 
-def default_profiles_dir() -> Path:
-    return PACKAGE / "profiles" / "x2d-0.4"
+def normalise_printer(printer: str | None = None) -> str:
+    """The printer key from the argument, `$PRINT3D_PRINTER`, or the default (A1)."""
+    key = (printer or os.environ.get(PRINTER_ENV) or DEFAULT_PRINTER).strip().lower()
+    key = key.replace("_", "-").replace(" ", "-")
+    aliases = {"bambu-a1": "a1", "bambu-lab-a1": "a1", "bambu-x2d": "x2d", "bambu-lab-x2d": "x2d"}
+    key = aliases.get(key, key)
+    if key not in PRINTERS:
+        raise ValueError(
+            f"Unknown printer {printer or key!r}; choose one of: {', '.join(PRINTERS)} "
+            f"(or set {PRINTER_ENV})."
+        )
+    return key
+
+
+def default_profiles_dir(printer: str | None = None) -> Path:
+    """Pinned profiles for this printer, or `$PRINT3D_PROFILES` for a custom set."""
+    if printer is None and (env := os.environ.get(PROFILES_ENV, "").strip()):
+        return Path(env).expanduser()
+    return PACKAGE / "profiles" / f"{normalise_printer(printer)}-0.4"
 
 
 def coupon_script() -> Path:

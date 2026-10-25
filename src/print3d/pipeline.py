@@ -19,10 +19,11 @@ from typing import Any
 from print3d.blender import BlenderError, run_model_script, scaffold_script
 from print3d.brief import PrintBrief, parse_brief
 from print3d.dfm import check_mesh, require_printable
-from print3d.filaments import DEFAULT_COLOUR, NOZZLES, colour_hex, job_filaments
+from print3d.filaments import DEFAULT_COLOUR, colour_hex, job_filaments
 from print3d.fits import fit_advice, load_fits
 from print3d.likeness import check_likeness, likeness_advice
 from print3d.paths import default_jobs_dir, default_profiles_dir
+from print3d.printer import Printer, load_printer
 from print3d.printability import (
     Advice,
     advise,
@@ -95,18 +96,24 @@ def run_job(
     execute: bool = True,
     jobs_dir: Path | None = None,
     profiles_dir: Path | None = None,
+    printer: str | None = None,
 ) -> dict[str, Any]:
     brief = parse_brief(prompt, color=color)
     job_dir = (jobs_dir or default_jobs_dir()) / brief.slug
     job_dir.mkdir(parents=True, exist_ok=True)
-    profiles = profiles_dir or default_profiles_dir()
+    profiles = profiles_dir or default_profiles_dir(printer)
     for required in ("machine.json", "process.json", "filament.json"):
         if not (profiles / required).is_file():
             raise PipelineError(
                 f"Pinned profile missing: {profiles / required}. Run: python -m print3d flatten"
             )
+    target = load_printer(printer, profiles)
 
-    report: dict[str, Any] = {"brief": brief.as_dict(), "job_dir": str(job_dir)}
+    report: dict[str, Any] = {
+        "brief": brief.as_dict(),
+        "job_dir": str(job_dir),
+        "printer": target.as_dict(),
+    }
     fits = load_fits()
     spec = load_spec(job_dir)
     if spec["dims"] or spec["unknowns"]:
@@ -135,10 +142,10 @@ def run_job(
         report["model"]["source"] = "blender"
 
     if report["model"].get("parts"):
-        return _run_parts(brief, job_dir, profiles, spec, fits, mesh_path, report, execute)
+        return _run_parts(brief, job_dir, profiles, target, spec, fits, mesh_path, report, execute)
 
     # 3. Is it even a solid?
-    dfm = require_printable(mesh_path)
+    dfm = require_printable(mesh_path, bed_mm=target.bed_mm, printer_name=target.name)
     report["dfm"] = dfm.as_dict()
     mesh_metrics = analyze_mesh(mesh_path)
     report["mesh_metrics"] = mesh_metrics
@@ -160,6 +167,7 @@ def run_job(
         ),
         datadir=job_dir / "studio-datadir",
         output_dir=job_dir / "slice",
+        bed_type=target.bed_type,
         # Auto-orient would silently rotate the part and invalidate every
         # overhang note below. Orientation is the model script's business.
         orient=False,
@@ -230,6 +238,7 @@ def _run_parts(
     brief: PrintBrief,
     job_dir: Path,
     profiles: Path,
+    target: Printer,
     spec: dict[str, Any],
     fits: dict[str, Any],
     assembly: Path,
@@ -264,7 +273,7 @@ def _run_parts(
     errors: list[str] = []
     metrics: dict[str, dict[str, Any]] = {}
     for obj in model["objects"]:
-        dfm = check_mesh(Path(obj["stl"]))
+        dfm = check_mesh(Path(obj["stl"]), bed_mm=target.bed_mm, printer_name=target.name)
         errors.extend(f"{obj['name']}: {error}" for error in dfm.errors)
         metrics[obj["name"]] = analyze_mesh(Path(obj["stl"]))
         notes.extend(mesh_advice(metrics[obj["name"]], part=obj["name"]))
@@ -282,14 +291,15 @@ def _run_parts(
         )
     if errors:
         raise PipelineError("; ".join(errors))
-    if len(colours) > NOZZLES:
+    if len(colours) > target.nozzles:
+        nozzle_word = "nozzle" if target.nozzles == 1 else "nozzles"
         notes.append(
             Advice(
                 "colours",
                 "note",
-                f"{len(colours)} colours on {NOZZLES} nozzles: Studio swaps filament within a nozzle, "
-                "purging at every change.",
-                "Fine with an AMS; otherwise keep to two colours per plate.",
+                f"{len(colours)} colours on {target.nozzles} {nozzle_word}: Studio swaps filament "
+                "at every change, purging in between.",
+                "Fine with an AMS; otherwise keep to fewer colours per plate.",
             )
         )
     report["mesh_metrics"] = metrics
@@ -341,6 +351,7 @@ def _run_parts(
         filaments=tuple(filaments),
         datadir=job_dir / "studio-datadir",
         output_dir=slice_dir,
+        bed_type=target.bed_type,
         orient=False,
         assemble_list=assemble,
     )

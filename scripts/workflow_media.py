@@ -270,7 +270,7 @@ def build_frames(report: dict, job: Path, turn: list[Path], work: Path) -> list[
 
     # 8. Slice.
     m = report["slice_metrics"]
-    canvas, draw = frame(8, total, "Sliced for the Bambu X2D", "Printed standing on its knob. Open the .3mf in Bambu Studio and print.")
+    canvas, draw = frame(8, total, "Sliced for the Bambu A1", "Printed standing on its knob. Open the .3mf in Bambu Studio and print.")
     paste(canvas, open_upright(Path(report["plate_png"])), (48, HEAD + 16, 640, H - 56))
     stats = [(f"{m['layer_count']}", "layers"), (m["estimated_time"], "print time"), (f"{m['filament_g']:.1f} g", "PLA")]
     y = 230

@@ -1,11 +1,14 @@
 ---
 name: print3d
-description: Model a part in Blender from an idea, a photo of an object, or the shop listing of something you would otherwise buy, slice it for the Bambu X2D, and iterate until it prints clean and matches the photo.
+description: Model a part in Blender from an idea, a photo of an object, or the shop listing of something you would otherwise buy, slice it for the Bambu Lab A1 (or X2D), and iterate until it prints clean and matches the photo.
 argument-hint: "[what to make, a photo of the object, or a shop link]"
 disable-model-invocation: true
+metadata:
+  # OpenCode should advertise it; Claude and Hermes keep the explicit command.
+  opencode/autoinvoke: true
 ---
 
-# /print3d — idea to a printable X2D part
+# /print3d — idea to a printable A1 part
 
 `print3d` below is the print3d command line. When the shell cannot find it, the
 print3d MCP tools of the same names do the same work. A job's files live in the
@@ -78,7 +81,7 @@ asks for.
 print3d make "<prompt>"
 ```
 
-Models, DFM-checks, slices with the pinned X2D presets, and reports. The run is
+Models, DFM-checks, slices with the pinned A1 presets, and reports. The run is
 **red** when `severity` is `error` — exit code 1, `status: needs_work`.
 
 While red: read `advice`, apply the `fix` each note carries to `model.py`, run
@@ -133,7 +136,16 @@ and the print sheet.
 
 ## The machine
 
-X2D, 0.4 mm nozzle, 256 × 256 × 260 mm bed, 0.20 mm layers, Bambu PLA Basic,
-textured PEI plate. **The pinned process has supports off** — that is why an
-overhang note is a real defect and not a setting to flip. Two nozzles: two
-colours print without a filament change.
+The default is the Bambu Lab A1: 0.4 mm nozzle, 256 × 256 × 256 mm bed, 0.20 mm
+layers, Bambu PLA Basic, textured PEI plate. **The pinned process has supports
+off** — that is why an overhang note is a real defect and not a setting to flip.
+One nozzle: every additional colour is an AMS swap with a purge, so keep colour
+counts deliberate.
+
+The X2D presets (256 × 256 × 261 mm, two nozzles) are still there. Select them
+with `PRINT3D_PRINTER=x2d` in the environment or `--printer x2d` on the command
+line; `print3d status` shows which printer, bed and profiles a run will use.
+
+On Windows, print3d finds Blender and Bambu Studio in their usual Program Files
+locations. If either was installed elsewhere, set `BLENDER_BIN` or
+`BAMBU_STUDIO_BIN` to the executable.

@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -70,8 +71,8 @@ def test_claude_gets_the_skill_linked_and_the_server_added(tmp_path):
 
 def test_hermes_gets_the_skill_linked_and_the_server_added_once(tmp_path):
     hermes = tmp_path / ".hermes"
-    (hermes / "skills").mkdir(parents=True)
-    (hermes / "skills" / "print3d").symlink_to(tmp_path / "gone")
+    (hermes / "skills" / "print3d").mkdir(parents=True)
+    (hermes / "skills" / "print3d" / "old.md").write_text("old\n", encoding="utf-8")
     config = hermes / "config.yaml"
     config.write_text(
         "model: x\n"
@@ -101,3 +102,61 @@ def test_hermes_config_without_servers_gets_the_section(tmp_path):
     config.write_text("model: x\nmcp_servers: {}\n")
     _apply(tmp_path, ["hermes"])
     assert config.read_text().startswith("model: x\nmcp_servers:\n  print3d:\n")
+
+
+def test_opencode_gets_the_skill_and_a_jsonc_server(tmp_path):
+    config = tmp_path / ".config" / "opencode" / "opencode.jsonc"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        '{\n'
+        '  // keep this comment\n'
+        '  "theme": "dark",\n'
+        '  "mcp": {\n'
+        '    "other": { "type": "local", "command": ["x"] }\n'
+        '  }\n'
+        '}\n',
+        encoding="utf-8",
+    )
+    _apply(tmp_path, ["opencode"])
+    _apply(tmp_path, ["opencode"])
+    text = config.read_text()
+    assert "// keep this comment" in text
+    assert text.count('"print3d":') == 1
+    parsed = json.loads(setup._strip_jsonc(text))
+    assert parsed["theme"] == "dark"
+    assert parsed["mcp"]["other"]["command"] == ["x"]
+    assert parsed["mcp"]["print3d"]["command"][-3:] == ["-m", "print3d", "mcp"]
+    assert (tmp_path / ".config" / "opencode" / "skills" / "print3d").resolve() == skill_dir()
+    assert list(config.parent.glob("opencode.jsonc.print3d-backup-*"))
+
+
+def test_opencode_config_without_mcp_gets_the_section(tmp_path):
+    config = tmp_path / ".config" / "opencode" / "opencode.jsonc"
+    config.parent.mkdir(parents=True)
+    config.write_text('{\n  "theme": "dark"\n}\n', encoding="utf-8")
+    _apply(tmp_path, ["opencode"])
+    parsed = json.loads(setup._strip_jsonc(config.read_text()))
+    assert parsed["theme"] == "dark"
+    assert parsed["mcp"]["print3d"]["enabled"] is True
+
+
+def test_opencode_is_detected_from_its_config_folder(tmp_path):
+    (tmp_path / ".config" / "opencode").mkdir(parents=True)
+    assert "opencode" in setup.detect(tmp_path, lambda _: None)
+
+
+def test_skill_is_copied_when_links_are_not_available(tmp_path, monkeypatch):
+    def no_symlink(*_args, **_kwargs):
+        raise OSError("no symlink privilege")
+
+    def no_junction(*args, **_kwargs):
+        return subprocess.CompletedProcess(args[0] if args else [], 1, "", "denied")
+
+    monkeypatch.setattr(Path, "symlink_to", no_symlink)
+    monkeypatch.setattr(setup.subprocess, "run", no_junction)
+    link = tmp_path / "skills" / "print3d"
+    setup._link(link, skill_dir())
+    assert link.is_dir() and not link.is_symlink()
+    assert (link / "SKILL.md").read_text(encoding="utf-8") == (
+        skill_dir() / "SKILL.md"
+    ).read_text(encoding="utf-8")

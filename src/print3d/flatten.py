@@ -12,13 +12,13 @@ import re
 from pathlib import Path
 from typing import Any, Iterable, Literal
 
+from print3d.paths import default_profiles_dir, normalise_printer
+from print3d.printer import PRESETS
+
 ProfileKind = Literal["machine", "process", "filament"]
 META_SKIP = {"inherits", "include", "instantiation", "setting_id", "is_custom_defined"}
 NOZZLE_SUFFIX_RE = re.compile(r"\s+\d+\.\d+\s+nozzle.*$")
 
-DEFAULT_MACHINE = "Bambu Lab X2D 0.4 nozzle"
-DEFAULT_PROCESS = "0.20mm Standard @BBL X2D"
-DEFAULT_FILAMENT = "Bambu PLA Basic @BBL X2D 0.4 nozzle"
 DEFAULT_BED_TYPE = "Textured PEI Plate"
 
 
@@ -34,8 +34,18 @@ def detect_profiles_root(slicer_path: str | None = None) -> Path:
     candidates.append(Path.home() / "Library/Application Support/BambuStudio/system")
     if slicer_path:
         slicer = Path(slicer_path).resolve()
+        # macOS keeps Resources beside the .app binary's parent; Windows keeps
+        # resources next to the executable.
         candidates.append(slicer.parent.parent / "Resources" / "profiles")
+        candidates.append(slicer.parent / "resources" / "profiles")
     candidates.append(Path("/Applications/BambuStudio.app/Contents/Resources/profiles"))
+    for env_name, tail in (
+        ("ProgramFiles", ("Bambu Studio", "resources", "profiles")),
+        ("LOCALAPPDATA", ("Programs", "Bambu Studio", "resources", "profiles")),
+        ("APPDATA", ("BambuStudio", "system")),
+    ):
+        if root := os.environ.get(env_name, "").strip():
+            candidates.append(Path(root).joinpath(*tail))
     for candidate in candidates:
         if (candidate / "BBL" / "machine").is_dir():
             return candidate
@@ -222,19 +232,27 @@ def write_profile(path: Path, data: dict[str, Any]) -> Path:
     return path
 
 
-def flatten_x2d(
+def flatten_profiles(
     *,
+    printer: str | None = None,
     profiles_root: Path | None = None,
-    output_dir: Path,
-    machine_leaf: str = DEFAULT_MACHINE,
-    process_leaf: str = DEFAULT_PROCESS,
+    output_dir: Path | None = None,
+    machine_leaf: str | None = None,
+    process_leaf: str | None = None,
     filament_leaves: Iterable[str] | None = None,
-    bed_type: str = DEFAULT_BED_TYPE,
+    bed_type: str | None = None,
     nozzle_volume_type: str | None = None,
     slicer_path: str | None = None,
 ) -> dict[str, Any]:
+    """Flatten one printer's profile tree into `output_dir` for the Studio CLI."""
+    key = normalise_printer(printer)
+    preset = PRESETS[key]
+    machine_leaf = machine_leaf or str(preset["machine"])
+    process_leaf = process_leaf or str(preset["process"])
+    bed_type = bed_type or str(preset["bed_type"])
+    output_dir = output_dir or default_profiles_dir(key)
     root = profiles_root or detect_profiles_root(slicer_path)
-    filaments = list(filament_leaves or [DEFAULT_FILAMENT])
+    filaments = list(filament_leaves or [str(preset["filament"])])
     index = build_name_index(root)
     machine = flatten_by_name(machine_leaf, index)
     process = flatten_by_name(process_leaf, index)
@@ -261,6 +279,7 @@ def flatten_x2d(
         filament_paths.append(write_profile(output_dir / name, filament))
 
     provenance = {
+        "printer": key,
         "profiles_root": _home_relative(root),
         "machine": machine_leaf,
         "process": process_leaf,
@@ -275,8 +294,15 @@ def flatten_x2d(
         json.dumps(provenance, indent=2) + "\n", encoding="utf-8"
     )
     return {
+        "printer": key,
         "machine_path": str(machine_path),
         "process_path": str(process_path),
         "filament_paths": [str(path) for path in filament_paths],
         "provenance": provenance,
     }
+
+
+def flatten_x2d(**kwargs: Any) -> dict[str, Any]:
+    """Kept for older scripts: flatten the X2D tree with the old defaults."""
+    kwargs.setdefault("printer", "x2d")
+    return flatten_profiles(**kwargs)

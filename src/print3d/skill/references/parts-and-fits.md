@@ -42,10 +42,11 @@ all the placement a part needs. Studio arranges the objects on each plate.
 
 ## Colours
 
-The X2D has two nozzles: two colours print without a filament change. A third
-colour is swapped in on one of them, with a purge each time; the run says so.
-Colour never changes the material: every filament is the pinned Bambu PLA
-Basic in another colour.
+The A1 has one nozzle: every colour after the first is an AMS swap with a purge,
+and the run says so when a job uses more colours than the printer has nozzles.
+The X2D (selected with `PRINT3D_PRINTER=x2d`) has two, so its first two colours
+print without a change. Colour never changes the material: every filament is the
+pinned Bambu PLA Basic in another colour.
 
 **Inlays** (a name, a logo, a stripe) are a part in the second colour fused with
 the part around it:

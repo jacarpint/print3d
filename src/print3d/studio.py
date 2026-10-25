@@ -49,13 +49,29 @@ def find_studio(search_path: str | None = None) -> Path:
         [
             "/opt/homebrew/bin/bambu-studio",
             "/Applications/BambuStudio.app/Contents/MacOS/BambuStudio",
+            *_windows_studio_candidates(),
         ]
     )
     for candidate in candidates:
         path = Path(candidate).expanduser()
         if path.is_file():
             return path.resolve()
-    raise StudioError("Bambu Studio CLI not found. Install Bambu Studio or set BAMBU_STUDIO_BIN.")
+    raise StudioError(
+        "Bambu Studio CLI not found. Install Bambu Studio or set BAMBU_STUDIO_BIN "
+        "(Windows: C:\\Program Files\\Bambu Studio\\bambu-studio.exe)."
+    )
+
+
+def _windows_studio_candidates() -> list[str]:
+    found: list[Path] = []
+    for env_name, tail in (
+        ("ProgramFiles", ("Bambu Studio", "bambu-studio.exe")),
+        ("LOCALAPPDATA", ("Programs", "Bambu Studio", "bambu-studio.exe")),
+    ):
+        if root := os.environ.get(env_name, "").strip():
+            found.append(Path(root).joinpath(*tail))
+    found.append(Path(r"C:\Program Files\Bambu Studio\bambu-studio.exe"))
+    return [str(path) for path in found]
 
 
 def _common_prefix(studio: Path, request: SliceRequest) -> list[str]:

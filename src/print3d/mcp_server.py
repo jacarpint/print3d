@@ -17,6 +17,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
 from print3d import spec as specs
+from print3d.dfm import check_mesh
 from print3d.fits import load_fits, save_fits
 from print3d.handoff import build_handoff
 from print3d.likeness import check_job
@@ -24,14 +25,18 @@ from print3d.paths import coupon_script, job_path, safe_name, skill_dir
 from print3d.photo import grid as draw_grid
 from print3d.photo import meet as cross
 from print3d.pipeline import run_job
+from print3d.printer import load_printer
 from print3d.viewer import build_viewer
 from print3d.printability import advise, analyze_mesh, analyze_slice
 
-INSTRUCTIONS = """\
+_TARGET = load_printer()
+INSTRUCTIONS = f"""\
 print3d turns an idea, or a photo of an object, into a Bambu Studio project for a
-Bambu Lab X2D. You write a Blender (bpy) model script; `make` runs it, checks the
-mesh, slices it and returns advice, each note with the fix to apply to the script.
-Iterate until no note is at `error`, then hand the user the .3mf path.
+{_TARGET.model} ({_TARGET.volume}, {_TARGET.nozzles} nozzle{'s' if _TARGET.nozzles != 1 else ''}).
+Set PRINT3D_PRINTER=x2d for the X2D. You write a Blender (bpy) model script;
+`make` runs it, checks the mesh, slices it and returns advice, each note with the
+fix to apply to the script. Iterate until no note is at `error`, then hand the
+user the .3mf path.
 
 Read guide("workflow") before the first run. From a photo of an object, also read
 guide("from-photo"): it records every dimension with its evidence and adds a
@@ -102,6 +107,7 @@ def make(
     mesh: str | None = None,
     color: str | None = None,
     dry_run: bool = False,
+    printer: Literal["a1", "x2d"] | None = None,
 ) -> list[Any]:
     """Model, check and slice. With no model yet, writes a starter model.py and names its path.
 
@@ -113,6 +119,7 @@ def make(
         mesh=Path(mesh) if mesh else None,
         color=color,
         execute=not dry_run,
+        printer=printer,
     )
     overlays = [r["overlay"] for r in report.get("likeness", [])]
     plates = [p["png"] for p in report.get("plates", [])] or [report.get("plate_png")]
@@ -130,9 +137,9 @@ def handoff(slug: str, cost_per_kg: float | None = None, currency: str | None = 
 
 
 @tool(images=True)
-def fit_coupon() -> list[Any]:
+def fit_coupon(printer: Literal["a1", "x2d"] | None = None) -> list[Any]:
     """Slice the fit coupon: a pin and holes at 0.00 to 0.40 mm clearance, to calibrate fits on this printer."""
-    report = run_job("fit coupon", script=coupon_script())
+    report = run_job("fit coupon", script=coupon_script(), printer=printer)
     return _with_images(report, [report.get("plate_png")])
 
 
@@ -296,12 +303,25 @@ def view(slug: str) -> str:
 
 
 @tool(read_only=True)
-def check(mesh: str, project: str | None = None) -> str:
+def check(
+    mesh: str,
+    project: str | None = None,
+    printer: Literal["a1", "x2d"] | None = None,
+) -> str:
     """Printability of an existing STL, and of its sliced .gcode.3mf when given."""
+    target = load_printer(printer)
     mesh_metrics = analyze_mesh(Path(mesh))
     slice_metrics = analyze_slice(Path(project)) if project else None
+    dfm = check_mesh(Path(mesh), bed_mm=target.bed_mm, printer_name=target.name)
     notes = advise(mesh_metrics, slice_metrics)
-    return _json({"mesh_metrics": mesh_metrics, "advice": [note.as_dict() for note in notes]})
+    return _json(
+        {
+            "printer": target.as_dict(),
+            "dfm": dfm.as_dict(),
+            "mesh_metrics": mesh_metrics,
+            "advice": [note.as_dict() for note in notes],
+        }
+    )
 
 
 def main() -> None:

@@ -47,14 +47,33 @@ def find_blender(search_path: str | None = None) -> Path:
             "/usr/bin/blender",
         ]
     )
+    candidates.extend(_windows_blender_candidates())
     for candidate in candidates:
         path = Path(candidate).expanduser()
         if path.is_file():
             return path.resolve()
     raise BlenderError(
         f"Blender not found. Install Blender or set {BLENDER_ENV} to the executable "
-        "(on macOS: /Applications/Blender.app/Contents/MacOS/Blender)."
+        "(Windows: C:\\Program Files\\Blender Foundation\\Blender 5.2\\blender.exe; "
+        "macOS: /Applications/Blender.app/Contents/MacOS/Blender)."
     )
+
+
+def _windows_blender_candidates() -> list[str]:
+    """Blender's usual Windows installs, newest first."""
+    roots: list[Path] = []
+    for env_name, tail in (
+        ("ProgramFiles", ("Blender Foundation",)),
+        ("LOCALAPPDATA", ("Programs", "Blender Foundation")),
+    ):
+        if root := os.environ.get(env_name, "").strip():
+            roots.append(Path(root).joinpath(*tail))
+    if not roots:
+        roots = [Path(r"C:\Program Files\Blender Foundation")]
+    found: list[Path] = []
+    for root in roots:
+        found.extend(root.glob("Blender */blender.exe"))
+    return [str(path) for path in sorted(found, reverse=True)]
 
 
 # Runs inside Blender's own Python, which cannot import print3d.

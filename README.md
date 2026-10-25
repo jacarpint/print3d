@@ -2,10 +2,11 @@
 
 A [Hermes Agent](https://github.com/NousResearch/hermes-agent) plugin that turns
 an idea, a photo of an object, or the shop listing of something you would
-otherwise buy into a Bambu Studio project for a **Bambu Lab X2D (0.4 mm
-nozzle)**. One part or several, in one colour or two, with fits measured against
+otherwise buy into a Bambu Studio project for a **Bambu Lab A1 (0.4 mm
+nozzle)**. The X2D profiles are still there: set `PRINT3D_PRINTER=x2d` to slice
+for one. One part or several, in one or more colours, with fits measured against
 your own printer, a 3D view to turn the result around in, and a print sheet to
-hand on. It also works with Claude Code, Codex, Cursor and Gemini CLI.
+hand on. It works with OpenCode, Claude Code, Codex, Cursor and Gemini CLI.
 
 ![From a museum photo of a wooden peg to a sliced, printable model, in eight steps](docs/workflow.gif)
 
@@ -53,9 +54,12 @@ itself, so there is no Hermes config to edit.
 Start a new session afterwards. `hermes plugins update print3d` updates both;
 `hermes plugins remove print3d` removes both.
 
-On macOS, Blender and Studio are found in `/Applications`. Elsewhere, set
+Blender and Studio are found automatically: `/Applications` on macOS and the
+usual Program Files locations on Windows. If either lives elsewhere, set
 `BLENDER_BIN` and `BAMBU_STUDIO_BIN` in the environment Hermes runs in. Jobs go to
-`~/print3d/jobs`, or `$PRINT3D_JOBS`.
+`~/print3d/jobs`, or `$PRINT3D_JOBS`. The printer defaults to the A1; set
+`PRINT3D_PRINTER=x2d` for an X2D, and `BAMBU_PROFILES_ROOT` if Bambu Studio's
+bundled profiles are somewhere unusual.
 
 ## Use it in Hermes
 
@@ -110,8 +114,8 @@ for a hand-off and you also get a [print sheet](#hand-it-off).
 
 ## Other agents
 
-For Claude Code, Codex, Cursor or Gemini CLI, or to point Hermes at a print3d
-you installed yourself:
+For OpenCode, Claude Code, Codex, Cursor or Gemini CLI, or to point Hermes at a
+print3d you installed yourself:
 
 ```bash
 uv tool install git+https://github.com/mfranzon/print3d
@@ -119,10 +123,13 @@ print3d setup
 ```
 
 `setup` finds the agents on this machine, shows what it will change, and on your
-yes registers the print3d MCP server with each. Claude Code and Hermes also get
-the skill as a `/print3d` command. Edited config files are backed up beside
-themselves. `--dry-run` shows the plan without changing anything; `--agent codex`
-limits it to one agent. Restart your agent afterwards.
+yes registers the print3d MCP server with each. OpenCode, Claude Code and Hermes
+also get the skill. On OpenCode it lands in `~/.config/opencode/skills/print3d`
+and the server in `~/.config/opencode/opencode.jsonc`; the edit keeps comments
+and every other server. On Windows the skill is linked with a junction, or
+copied when even that is not possible. Edited config files are backed up beside
+themselves. `--dry-run` shows the plan without changing anything; `--agent
+opencode` limits it to one agent. Restart your agent afterwards.
 
 To update, run `uv tool upgrade print3d`, then `print3d setup` again.
 
@@ -136,7 +143,8 @@ print3d make "a 40mm nameplate that says MARCO" --script examples/nameplate.py
 
 This models, checks, slices and prints a JSON report, and exits 1 if any check
 fails. Without `--script`, it writes a starter `jobs/<slug>/model.py` for you to
-fill in and run again.
+fill in and run again. Add `--printer x2d` to any command that slices to use the
+X2D presets; the A1 is the default.
 
 | Command | What it does |
 | --- | --- |
@@ -154,8 +162,8 @@ fill in and run again.
 | `coupon` | Slice the fit coupon that calibrates your printer's clearances |
 | `fit show` / `fit set` | The clearance per fit that scripts get as `params["fit"]`, and recording yours |
 | `plan model.stl out.gcode.3mf` | Show the Studio command without running it |
-| `status` | Where Blender and Studio were found |
-| `flatten` | Rebuild the X2D presets in `src/print3d/profiles/x2d-0.4/` |
+| `status` | The printer, bed, profiles, Blender and Studio a run will use |
+| `flatten` | Rebuild the pinned presets (`--printer a1` or `x2d`) |
 | `setup` | Register print3d with your agents |
 | `mcp` | Run the MCP server on stdio (agents launch this) |
 
@@ -306,7 +314,8 @@ Replay it with `pytest tests/test_bracket_benchmark.py`; rebuild the media with
 Most things worth designing are more than one solid. Model every part where it
 sits when assembled, name it, and say how it turns to print. The run checks each
 printed object on its own, measures the gaps between parts, gives each colour its
-own filament on the X2D's two nozzles, and slices all of it into one project.
+own filament (swapped with a purge on the A1's single nozzle), and slices all of
+it into one project.
 
 ```python
 c = params["fit"]["slide"]                       # this printer's slide clearance
@@ -376,6 +385,8 @@ hermes plugins validate .                           # check the plugin package
 ```
 
 In a checkout, jobs go to `jobs/` in the repo. The repo root is the Hermes
-plugin: `plugin.json`, `mcp.json` (the MCP server) and `skills/print3d` (a link to
-`src/print3d/skill`). Keep `plugin.json`'s version in step with `pyproject.toml`;
-`tests/test_plugin.py` checks it.
+plugin: `plugin.json`, `mcp.json` (the MCP server) and `skills/print3d`, a copy
+of `src/print3d/skill` (a real folder, so a Windows checkout without Developer
+Mode still works). After editing the skill, run `python scripts/sync_skill.py`;
+`tests/test_plugin.py` fails when the two drift apart. Keep `plugin.json`'s
+version in step with `pyproject.toml`; the same test checks it.
